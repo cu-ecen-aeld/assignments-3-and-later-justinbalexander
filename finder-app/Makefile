@@ -21,11 +21,11 @@ endif
 
 # Source files go here
 WRITER_SOURCES = \
-			assignments/assignment2/writer.c
+			../assignments/assignment2/writer.c
 
 # Include directories go here
 WRITER_INC = \
-			assignments/assignment2/
+			../assignments/assignment2/
 
 ENHANCED_WARNINGS += \
 			-Wnull-dereference \
@@ -55,11 +55,13 @@ _CFLAGS +=  -fsanitize=address \
 						-fno-omit-frame-pointer \
 						-fsanitize-address-use-after-scope
 _LDFLAGS += -fsanitize=address
+# Create C file to be compiled and linked into application
+# with default asan options. (See ASAN documentation)
 WRITER_SOURCES += $(ARTIFACT_DIR)/asan_default_options.c
 $(ARTIFACT_DIR)/asan_default_options.c: $(MAKEFILE_LIST)
 	@mkdir -p $(@D)
 	@echo 'const char *__asan_default_options() { \
-		return "verbosity=1:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"; \
+		return "verbosity=0:strict_string_checks=1:detect_stack_use_after_return=1:check_initialization_order=1:strict_init_order=1"; \
 	}' > $@
 
 # Set up Undefined Behavior Sanitizer
@@ -83,7 +85,7 @@ all: writer
 .PHONY: clean
 clean:
 	@rm -rf --preserve-root $(BUILD_DIR)
-	@rm --preserve-root ../writer
+	@rm -f ./writer
 
 # Using a recursive make invocation here allows the output artifact
 # rule to match (eg. $(ARTIFACT_DIR)/my/output/file) so that the
@@ -99,8 +101,7 @@ $(ARTIFACT_DIR)/writer: $(WRITER_OBJECTS)
 	@mkdir -p $(@D)
 	@echo "LD        $@"
 	@$(CROSS_COMPILE)gcc $(_LDFLAGS) $^ -o $@
-	@pwd
-	@cp $@ ../
+	@cp $@ ./
 
 # This rule matches all object files that need to be created and that
 # match a ".c" file.
