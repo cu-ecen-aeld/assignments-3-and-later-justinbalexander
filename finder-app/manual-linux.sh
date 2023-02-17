@@ -5,6 +5,7 @@
 set -e
 set -u
 
+this_script_dir=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
 OUTDIR=$(readlink -f "${1:-/tmp/aeld}")
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.1.10
@@ -117,13 +118,25 @@ for dep in "${libdeps[@]}"; do
   done
 done
 
-# TODO: Make device nodes
+# Make device nodes
+# See Mastering Embedded Linux Programming 2nd Edition pg 140
+# The major and minor numbers are in kernel source devices.txt
+sudo mknod -m 666 "$OUTDIR/rootfs/dev/null" c 1 3
+sudo mknod -m 600 "$OUTDIR/rootfs/dev/console" c 5 1
 
-# TODO: Clean and build the writer utility
+# Clean and build the writer utility
+cd $this_script_dir
+make clean
+make CROSS_COMPILE="$CROSS_COMPILE"
 
-# TODO: Copy the finder related scripts and executables to the /home directory
+# Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
+cp -a -v ./writer "$OUTDIR/rootfs/home"
+# TODO: finish assignment, copying scripts into rootfs to test in qemu. See assignment instructions
 
-# TODO: Chown the root directory
+# Chown the root directory
+sudo chown -R $(whoami) "$OUTDIR/rootfs"
 
-# TODO: Create initramfs.cpio.gz
+# Create initramfs.cpio.gz
+cd "$OUTDIR/rootfs"
+find . | cpio -H newc -ov --owner root:root | gzip -f > "$OUTDIR"/initramfs.cpio.gz
