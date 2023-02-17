@@ -5,7 +5,7 @@
 set -e
 set -u
 
-OUTDIR=/tmp/aeld
+OUTDIR=$(readlink -f "${1:-/tmp/aeld}")
 KERNEL_REPO=git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
 KERNEL_VERSION=v5.1.10
 BUSYBOX_VERSION=1_33_1
@@ -13,13 +13,11 @@ FINDER_APP_DIR=$(realpath $(dirname $0))
 ARCH=arm64
 CROSS_COMPILE=aarch64-none-linux-gnu-
 
-if [ $# -lt 1 ]
-then
-	echo "Using default directory ${OUTDIR} for output"
-else
-	OUTDIR=$1
-	echo "Using passed directory ${OUTDIR} for output"
-fi
+cc_path=$(command -v "$CROSS_COMPILE"gcc) || { echo Error: "$CROSS_COMPILE"gcc not in PATH; exit 1; }
+sysroot="$($cc_path -print-sysroot)"
+echo "Using sysroot ${sysroot}"
+
+echo "Using directory ${OUTDIR} for output"
 
 mkdir -p ${OUTDIR}
 
@@ -34,10 +32,15 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     echo "Checking out version ${KERNEL_VERSION}"
     git checkout ${KERNEL_VERSION}
 
-    # TODO: Add your kernel build steps here
+    # This will select for the default qemu virtual target
+    make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" defconfig
+    make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" -j$(nproc) all
+    make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" -j$(nproc) modules
+    make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" -j$(nproc) dtbs
 fi
 
 echo "Adding the Image in outdir"
+cp "$OUTDIR/linux-stable/arch/$ARCH/boot/Image" "$OUTDIR"
 
 echo "Creating the staging directory for the root filesystem"
 cd "$OUTDIR"
@@ -47,7 +50,11 @@ then
     sudo rm  -rf ${OUTDIR}/rootfs
 fi
 
-# TODO: Create necessary base directories
+# Create necessary base directories
+mkdir "$OUTDIR"/rootfs
+for dir in bin dev etc home lib lib64 proc sbin sys tmp usr/bin usr/lib usr/sbin var/log; do
+mkdir -p "$OUTDIR/rootfs/$dir"
+done
 
 cd "$OUTDIR"
 if [ ! -d "${OUTDIR}/busybox" ]
@@ -55,18 +62,57 @@ then
 git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
-    # TODO:  Configure busybox
+    make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" distclean
+    make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" defconfig
 else
     cd busybox
 fi
 
-# TODO: Make and install busybox
+# https://git.busybox.net/busybox/tree/INSTALL
+# Make and install busybox
+make ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" -j$(nproc)
+make CONFIG_PREFIX="$OUTDIR/rootfs" ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" install
 
-echo "Library dependencies"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "program interpreter"
-${CROSS_COMPILE}readelf -a bin/busybox | grep "Shared library"
+add_lib_deps()
+{
+  echo "Adding lib deps to list for ${1:?bin required}"
 
-# TODO: Add library dependencies to rootfs
+  lib_dir=/lib
+  if file "$1" | grep "64-bit">/dev/null; then
+    lib_dir=/lib64
+  fi
+
+  if file "$1" | grep "dynamically linked">/dev/null; then
+    # The interpreter listing includes the "/lib" prefix already
+    libdeps+=( "$(${CROSS_COMPILE}readelf -a "$1" | grep "program interpreter" | awk '{print $4}' | tr -d ']')" )
+  fi
+
+  # These ones do not include the "/lib" or "/lib64" prefix so we have to add one
+  for dep in $(${CROSS_COMPILE}readelf -a "$1" | grep  "Shared library" | awk '{print $5}' | tr -d '[]'); do
+    libdeps+=( "$lib_dir/$dep" )
+  done
+}
+add_lib_deps "$OUTDIR/rootfs/bin/busybox"
+
+# Add library dependencies to rootfs
+for dep in "${libdeps[@]}"; do
+  candidates=$(find "$sysroot" -path "*$dep")
+  if [ -z "$candidates" ]; then
+    echo "ERROR: No file found for dependency $dep"
+    continue
+  fi
+  # There should be only one candidate, but just in case iterate through.
+  # This will cause only the final candidate to exist, but the copy operations
+  # will at least be in the logs.
+  for candidate in $candidates; do
+    cp -a -v "$candidate" "$OUTDIR/rootfs/$dep"
+    # Look for a symlink and also copy the pointed to library alongisde
+    pointee_filename=$(readlink $candidate) || continue
+    pointee_path="$(readlink -e $candidate)" || continue
+    final_path="$OUTDIR/rootfs/$(dirname $dep)/$pointee_filename"
+    cp -a -v "$pointee_path" "$final_path"
+  done
+done
 
 # TODO: Make device nodes
 
