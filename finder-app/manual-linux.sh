@@ -112,6 +112,9 @@ for dep in "${libdeps[@]}"; do
     final_path="$OUTDIR/rootfs/$(dirname $dep)/$pointee_filename"
     cp -a -v "$pointee_path" "$final_path"
   done
+  for candidate in $candidates; do
+    "$CROSS_COMPILE"strip --strip-unneeded "$OUTDIR/rootfs/$dep"
+  done
 done
 
 # TODO: Make device nodes
