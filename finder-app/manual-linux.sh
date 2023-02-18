@@ -76,47 +76,65 @@ make CONFIG_PREFIX="$OUTDIR/rootfs" ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" 
 
 add_lib_deps()
 {
-  echo "Adding lib deps to list for ${1:?bin required}"
+  # On first call, create global variable for use in other functions
+  if [ "unset" = ${libdeps-unset} ]; then
+    declare -ag libdeps
+  fi
 
-  lib_dir=/lib
+  local -a localdeps
+
+  echo "===Adding lib deps to list for ${1:?bin required}==="
+
+  local lib_dir=/lib
   if file "$1" | grep "64-bit">/dev/null; then
     lib_dir=/lib64
   fi
 
   if file "$1" | grep "dynamically linked">/dev/null; then
     # The interpreter listing includes the "/lib" prefix already
-    libdeps+=( "$(${CROSS_COMPILE}readelf -a "$1" | grep "program interpreter" | awk '{print $4}' | tr -d ']')" )
+    localdeps+=( "$(${CROSS_COMPILE}readelf -a "$1" | grep "program interpreter" | awk '{print $4}' | tr -d ']')" )
   fi
 
   # These ones do not include the "/lib" or "/lib64" prefix so we have to add one
   for dep in $(${CROSS_COMPILE}readelf -a "$1" | grep  "Shared library" | awk '{print $5}' | tr -d '[]'); do
-    libdeps+=( "$lib_dir/$dep" )
+    localdeps+=( "$lib_dir/$dep" )
   done
+  libdeps+=( "${localdeps[@]}" )
+
+  echo "${localdeps[@]}"
+  echo "===End of lib deps for ${1:?bin required}==="
 }
 add_lib_deps "$OUTDIR/rootfs/bin/busybox"
 
-# Add library dependencies to rootfs
-for dep in "${libdeps[@]}"; do
-  candidates=$(find "$sysroot" -path "*$dep")
-  if [ -z "$candidates" ]; then
-    echo "ERROR: No file found for dependency $dep"
-    continue
+add_deps_to_rootfs()
+{
+  if [ "unset" = ${libdeps-unset} ]; then
+    return
   fi
-  # There should be only one candidate, but just in case iterate through.
-  # This will cause only the final candidate to exist, but the copy operations
-  # will at least be in the logs.
-  for candidate in $candidates; do
-    cp -a -v "$candidate" "$OUTDIR/rootfs/$dep"
-    # Look for a symlink and also copy the pointed to library alongisde
-    pointee_filename=$(readlink $candidate) || continue
-    pointee_path="$(readlink -e $candidate)" || continue
-    final_path="$OUTDIR/rootfs/$(dirname $dep)/$pointee_filename"
-    cp -a -v "$pointee_path" "$final_path"
+
+  # Add library dependencies to rootfs
+  for dep in "${libdeps[@]}"; do
+    candidates=$(find "$sysroot" -path "*$dep")
+    if [ -z "$candidates" ]; then
+      echo "ERROR: No file found for dependency $dep"
+      continue
+    fi
+    # There should be only one candidate, but just in case iterate through.
+    # This will cause only the final candidate to exist, but the copy operations
+    # will at least be in the logs.
+    for candidate in $candidates; do
+      cp -a -v "$candidate" "$OUTDIR/rootfs/$dep"
+      # Look for a symlink and also copy the pointed to library alongisde
+      pointee_filename=$(readlink $candidate) || continue
+      pointee_path="$(readlink -e $candidate)" || continue
+      final_path="$OUTDIR/rootfs/$(dirname $dep)/$pointee_filename"
+      cp -a -v "$pointee_path" "$final_path"
+    done
+    for candidate in $candidates; do
+      "$CROSS_COMPILE"strip --strip-unneeded "$OUTDIR/rootfs/$dep"
+    done
   done
-  for candidate in $candidates; do
-    "$CROSS_COMPILE"strip --strip-unneeded "$OUTDIR/rootfs/$dep"
-  done
-done
+}
 
 # Make device nodes
 # See Mastering Embedded Linux Programming 2nd Edition pg 140
