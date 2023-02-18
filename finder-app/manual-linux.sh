@@ -139,8 +139,8 @@ add_deps_to_rootfs()
 # Make device nodes
 # See Mastering Embedded Linux Programming 2nd Edition pg 140
 # The major and minor numbers are in kernel source devices.txt
-sudo mknod -m 666 "$OUTDIR/rootfs/dev/null" c 1 3
-sudo mknod -m 600 "$OUTDIR/rootfs/dev/console" c 5 1
+#sudo mknod -m 666 "$OUTDIR/rootfs/dev/null" c 1 3
+#sudo mknod -m 600 "$OUTDIR/rootfs/dev/console" c 5 1
 
 # Clean and build the writer utility
 cd $this_script_dir
@@ -160,7 +160,7 @@ cp -a -v ./autorun-qemu.sh "$OUTDIR/rootfs/home"
 add_deps_to_rootfs
 
 # Chown the root directory
-sudo chown -R $(whoami) "$OUTDIR/rootfs"
+#sudo chown -R $(whoami) "$OUTDIR/rootfs"
 
 # Create initramfs.cpio.gz
 cd "$OUTDIR/rootfs"
