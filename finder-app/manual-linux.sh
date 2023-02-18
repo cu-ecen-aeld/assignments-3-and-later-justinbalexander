@@ -145,12 +145,19 @@ sudo mknod -m 600 "$OUTDIR/rootfs/dev/console" c 5 1
 # Clean and build the writer utility
 cd $this_script_dir
 make clean
-make CROSS_COMPILE="$CROSS_COMPILE"
+make DEBUG=n CROSS_COMPILE="$CROSS_COMPILE" # disable asan/ubsan on hardware for now
 
 # Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
 cp -a -v ./writer "$OUTDIR/rootfs/home"
-# TODO: finish assignment, copying scripts into rootfs to test in qemu. See assignment instructions
+add_lib_deps ./writer
+cp -a -v ./finder.sh "$OUTDIR/rootfs/home"
+cp -a -v ./conf "$OUTDIR/rootfs/home/"
+cp -a -v ../conf "$OUTDIR/rootfs/"
+cp -a -v ./finder-test.sh "$OUTDIR/rootfs/home"
+cp -a -v ./autorun-qemu.sh "$OUTDIR/rootfs/home"
+
+add_deps_to_rootfs
 
 # Chown the root directory
 sudo chown -R $(whoami) "$OUTDIR/rootfs"
